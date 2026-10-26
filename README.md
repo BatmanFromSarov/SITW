@@ -87,6 +87,9 @@ The project prioritizes a stable core, explicit module boundaries, tests, and re
 ### Responsible support
 
 SITW should not shame users for inactivity, manipulate emotional attachment, or claim to replace professional care. It must be honest about its capabilities and limitations.
+### Honest project status
+
+SITW distinguishes implemented features, tested capabilities, prototypes, and planned functionality. Documentation must not present an architectural goal as a delivered feature or claim reliability without supporting tests.
 
 ## Collaboration
 
@@ -139,7 +142,7 @@ Contributions, technical feedback, and thoughtful collaboration are welcome.
   1. Развернут локальный Dev-контур (Python 3.15 + VS Code).
   2. Физически материализовано ядро базы данных `sitw_cave.db`.
   3. Создана первая умная таблица `users` с контуром кастомного имени напарника.
-  4. Успешно запущен первый в истории Organic Onboarding. Данные Лидера (Брюс) и Напарника (Альфред) запечатаны в локальную сталь. Стерильность логов подтверждена через аудит в DB Browser.
+  4. Успешно запущен первый в истории Organic Onboarding. Данные Лидера (Брюс) и Напарника (Альфред) запечатаны в локальную сталь. Проведена первичная проверка структуры базы данных через DB Browser. Полноценная проверка корректности логирования требует дополнительных тестов.
 ### [Патч v2.3 Alpha] — Архитектура Квестов и Первые Трофеи (24.10.2026)
 * Развернута новая таблица `quests` для управления Сюжетками и Дейликами.
 * База данных научилась понимать типы задач (Daily/Main/Rescue) и баланс начисления EXP.
@@ -175,10 +178,10 @@ Contributions, technical feedback, and thoughtful collaboration are welcome.
   Инициализирован контур `google-genai` с зашитым Психологическим ДНК Альфреда (`ALFRED_PROMPT`). В ходе тестов столкнулись с жесткой региональной блокировкой Google API для СНГ-региона. Сетевые рельсы оперативно перестроены на OpenAI SDK через прокси-агрегатор `gpt-4o-mini` для обхода блокировок напрямую без VPN.
 
 * **v3.0.2 — Фильтрация Длины строк & HTML-Leaks:**
-  Выявлен инфраструктурный баг провайдера: при пиковых вечерних нагрузках шлюз ProxyAPI падал и вместо JSON выплескивал сырой HTML-код своей страницы авторизации, вызывая в `telebot` ошибку `400 Bad Request: text is too long`. Внедрен жесткий фильтр длины текста на уровне Python (`ai_reply[:1000]`), предотвративший падение серверов.
+  Выявлен инфраструктурный баг провайдера: при пиковых вечерних нагрузках шлюз ProxyAPI падал и вместо JSON выплескивал сырой HTML-код своей страницы авторизации, вызывая в `telebot` ошибку `400 Bad Request: text is too long`. Внедрен жесткий фильтр длины текста на уровне Python (`ai_reply[:1000]`), предназначенный для предотвращения ошибки отправки слишком длинного сообщения в Telegram.
 
 * **v3.0.3 — Перевод на GitHub Models & Адаптивный Парсинг:**
-  Выполнен переход на официальный бесплатный шлюз ИИ-вычислений `://azure.com` под учетной записью `BatmanFromSarov`. Столкнулись с задержкой активации Fine-grained токена на серверах Microsoft Azure и ошибкой совместимости типов (`'str' object has no attribute 'choices'`). Написан отказоустойчивый двухвариантный парсер типов данных на чистом Python (`isinstance(response, str)`).
+  Выполнен переход на официальный бесплатный шлюз ИИ-вычислений `[GitHub Models](https://github.com/marketplace/models)` под учетной записью `BatmanFromSarov`. Столкнулись с задержкой активации Fine-grained токена на серверах Microsoft Azure и ошибкой совместимости типов (`'str' object has no attribute 'choices'`). Написан отказоустойчивый двухвариантный парсер типов данных на чистом Python (`isinstance(response, str)`).
 
 * **v3.0.4 — Внедрение Локальной Матрицы Выживания (Failover Контур):**
   Реализован отказоустойчивый контур автоматического резервирования (Failover) из нескольких распределенных сетевых шлюзов. Развернут **Локальный Эмулятор ИИ Альфреда** на базе случайных кинематографичных текстовых пресетов (`random.choice`). При полном обрыве внешней сети бот не падает, а выдает кастомный нуарный ответ, идеально попадающий в контекст Бэтпещеры, и намертво запечатывает логи в SQLite-таблицу `chat_logs`.
