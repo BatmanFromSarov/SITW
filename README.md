@@ -1,29 +1,118 @@
 # SITW — Something In The Way
 
-**Локальный ИИ-помощник с памятью, персонализацией и RPG-механиками.**
+**An offline-first AI companion designed to support people through difficult moments.**
 
-SITW — мой долгосрочный проект: автономный цифровой помощник, который должен помогать пользователю организовывать повседневные задачи, отслеживать собственное состояние и выстраивать устойчивые привычки.
+> Even amid all this darkness, I see the light.
+>
+> «Даже среди всей этой тьмы — я вижу свет».
 
-Я разрабатываю проект самостоятельно, совмещая работу на заводе по графику 4/1 с изучением программирования и архитектуры ИИ-систем.
-## Почему я создаю SITW
+SITW is a personal software project focused on building a free, customizable, and autonomous AI companion. Its purpose is to provide a reliable point of support when everyday life becomes difficult, helping users organize their thoughts and find their next step.
 
-SITW начался не с желания создать очередного ИИ-помощника.
+The project is inspired by the idea of a personal Batcomputer: a locally controlled assistant with memory, configurable behavior, and an extensible architecture.
 
-В какой-то момент я столкнулся с выгоранием. После рабочих смен я иногда приходил домой и по сорок минут лежал на полу, не понимая, что мне делать дальше и как заставить себя двигаться.
+**SITW is under active development.** The current repository contains an early prototype, and its architecture is being reworked toward an independent core.
 
-Тогда я начал общаться с ИИ в обычном браузерном чате. Постепенно этот диалог стал для меня точкой опоры. Он помогал мне выбираться из состояния, в котором я застревал, и находить следующий шаг, когда самостоятельно сделать это было трудно.
+## Why SITW exists
 
-Но у браузерного чата были ограничения. Он зависел от сервиса, а со временем начал тормозить. И я задумался: что, если создать собственную программу, которая сохранит этот опыт общения, память и привычный характер помощника, но будет работать локально и оставаться под контролем пользователя?
+SITW began with a personal experience of burnout.
 
-Так появился **SITW — Something In The Way**.
+During difficult periods, even deciding what to do next can become overwhelming. Conversations with an AI assistant helped me find a point of reference and work through moments when I felt stuck.
 
-Я хочу создать автономного ИИ-помощника, к которому можно вернуться после тяжёлого дня, не начиная каждый раз с нуля. Помощника, которого можно настраивать под себя, чьи данные остаются на собственном устройстве и который не требует обязательной подписки на облачный сервис.
+However, relying on a browser-based service has limitations. I wanted to explore a different approach: an assistant that runs locally, preserves user-controlled context, and does not depend on a mandatory cloud service.
 
-Я не считаю ИИ заменой человеческим отношениям или профессиональной помощи. Но я знаю по собственному опыту, что диалог с правильно настроенным помощником может стать полезной точкой опоры.
+SITW is my attempt to turn that idea into a practical tool that may help other people, too.
 
-Сейчас SITW находится в разработке. Я совмещаю работу на заводе по графику 4/1 с созданием проекта и постепенно проверяю его архитектуру, начиная с ядра.
+AI is not a replacement for human relationships or professional support. SITW aims to be an additional tool people can turn to when they need help organizing their thoughts or finding a manageable next step.
 
-**Моя цель — превратить опыт, который однажды помог мне самому, в инструмент, который сможет оказаться полезным и другим людям.**
+## Current development direction
+
+The project is moving from a Telegram-centered prototype toward an independent application core.
+
+The first priority is to establish a reliable foundation before expanding the feature set.
+
+Current development priorities:
+
+- **Independent core** — business logic separated from communication interfaces.
+- **CLI / CMD execution** — the core should be runnable without a graphical interface or Telegram.
+- **Reliable data storage** — SQLite, safe schema migrations, and persistent application state.
+- **Local AI** — integration with a locally running language model.
+- **Memory and personalization** — user-controlled context and configurable assistant behavior.
+- **Extensibility** — a modular architecture for future features and integrations.
+
+Telegram is currently a prototype interface and testing environment, not the intended final form of SITW.
+
+## Long-term vision
+
+The planned architecture includes several independent components:
+
+- **Core** — application logic and coordination.
+- **Local AI** — local language model inference.
+- **Memory** — persistent context and user settings.
+- **Workshop** — extensible local configuration and feature packages.
+- **RPG** — optional quests and learning systems.
+- **User Interface** — a standalone application with customizable appearance.
+- **Audio** — optional voice interaction and sound features.
+- **Safety** — safeguards, predictable behavior, and transparent limitations.
+
+These are development goals, not a claim that every component is already implemented.
+
+RPG features are optional and separate from the assistant's primary purpose. SITW should support users rather than turn recovery into another productivity system.
+
+## Core principles
+
+### Free for everyone
+
+SITW is intended to remain free. There will be no paid subscriptions, paid features, or functionality locked behind payments.
+
+Before a formal partnership, voluntary user donations are the project's only planned source of income. Donations will not unlock features or provide advantages.
+
+### Offline-first
+
+The long-term goal is for core functionality to operate locally without requiring an internet connection or a paid cloud API.
+
+This capability is still under development and must be verified through testing.
+
+### User-controlled data
+
+Memory and application state should remain under the user's control. Data integrity, backups, safe migrations, and transparent limitations are important design requirements.
+
+### Personalization
+
+Users should be able to configure the assistant's communication style and appearance. Customization is part of the intended experience, not a reward for progression or payment.
+
+### Reliability over feature count
+
+The project prioritizes a stable core, explicit module boundaries, tests, and recoverable data over rapid feature expansion.
+
+### Responsible support
+
+SITW should not shame users for inactivity, manipulate emotional attachment, or claim to replace professional care. It must be honest about its capabilities and limitations.
+
+## Collaboration
+
+SITW is an independent project, but its long-term vision may require a team.
+
+I am open to collaboration with developers, researchers, and companies working on local AI, privacy-focused software, personalization, and human-centered AI products.
+
+I am particularly interested in opportunities to contribute to a team that could help develop SITW into a reliable, accessible product.
+
+The goal of collaboration is to expand what the project can achieve while preserving its core principles: accessibility, user control, and support without financial barriers.
+
+## Project status
+
+SITW is currently in an early development stage.
+
+The immediate objective is to stabilize the existing prototype, separate the application core from Telegram-specific logic, and establish a testable foundation for local AI integration.
+
+The roadmap may change as implementation and testing reveal new requirements. Planned features should not be interpreted as completed functionality.
+
+Contributions, technical feedback, and thoughtful collaboration are welcome.
+
+---
+
+**SITW — Something In The Way**
+
+*Even amid all this darkness, I see the light.*
 
 ## Текущий статус
 
@@ -100,5 +189,28 @@ SITW начался не с желания создать очередного �
 * **v3.0.5 — Внедрение Локальной Матрицы Выживания (Failover Контур):**
   Реализован отказоустойчивый контур автоматического резервирования (Failover) из нескольких распределенных сетевых шлюзов. Развернут **Локальный Эмулятор ИИ Альфреда** на базе случайных кинематографичных текстовых пресетов (`random.choice`). При полном обрыве внешней сети бот не падает, а выдает кастомный нуарный ответ, идеально попадающий в контекст Бэтпещеры, и намертво запечатывает логи в SQLite-таблицу `chat_logs`.
 
-*Экосистема SITW переведена в режим тотальной автономии. Лагов больше нет. Код и логи стерильны.*
+###### SITW Devlog — переход к независимому ядру
+
+**Статус:** архитектура пересматривается.
+
+По мере развития SITW стало понятно, что дальнейшее добавление функций в Telegram-прототип без чёткого разделения бизнес-логики и интерфейса усложнит развитие проекта.
+
+Поэтому я меняю приоритет разработки.
+
+Вместо того чтобы продолжать наращивать функциональность бота, я сосредоточусь на независимом ядре SITW, которое сможет запускаться через CMD без Telegram и графического интерфейса.
+
+Это позволит сначала проверить основные механизмы системы, надёжность хранения данных и взаимодействие компонентов, а затем подключать разные интерфейсы к одному ядру.
+
+**Новый порядок работы:**
+1. Проверка и стабилизация существующего прототипа.
+2. Выделение независимого ядра.
+3. Надёжная работа с SQLite и состоянием приложения.
+4. Подготовка архитектуры к подключению локальной языковой модели.
+5. Постепенное возвращение и расширение пользовательских функций.
+
+Telegram остаётся частью истории и тестирования SITW, но больше не определяет архитектуру всего проекта.
+
+Цель не изменилась: создать бесплатного, настраиваемого и автономного ИИ-помощника, который сможет стать точкой опоры для человека в трудный момент.
+
+Изменился путь реализации — теперь приоритетом становится надёжный фундамент.
 
