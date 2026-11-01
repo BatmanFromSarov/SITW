@@ -2,6 +2,7 @@ import sqlite3
 import sys
 
 from sitw.core.assistant import Assistant
+from sitw.core.backend import BackendCloseError, GenerationError, InvalidResponseError
 from sitw.database.storage import Storage
 
 
@@ -12,6 +13,8 @@ def main():
         print(f"SITW: Ошибка открытия хранилища: {exc}", file=sys.stderr)
         return 1
 
+    assistant = None
+    status = 0
     try:
         assistant = Assistant()
         history = storage.get_history()
@@ -34,15 +37,41 @@ def main():
                 continue
 
             storage.save_message("user", message)
-            response = assistant.respond(message)
+            try:
+                response = assistant.respond(message)
+            except GenerationError as exc:
+                reason = (
+                    "получен пустой или некорректный ответ"
+                    if isinstance(exc, InvalidResponseError)
+                    else "сбой backend"
+                )
+                print(
+                    f"SITW: Не удалось сформировать ответ: {reason}. "
+                    "Ваше сообщение сохранено. Работа остановлена.",
+                    file=sys.stderr,
+                )
+                status = 1
+                break
             storage.save_message("assistant", response)
             print(f"SITW: {response}")
-        return 0
     except (sqlite3.Error, OSError) as exc:
         print(f"SITW: Ошибка хранилища, работа остановлена: {exc}", file=sys.stderr)
-        return 1
+        status = 1
     finally:
-        storage.close()
+        try:
+            if assistant is not None:
+                try:
+                    assistant.close()
+                except BackendCloseError:
+                    print("SITW: Ошибка освобождения ресурсов backend.", file=sys.stderr)
+                    status = 1
+        finally:
+            try:
+                storage.close()
+            except (sqlite3.Error, OSError):
+                print("SITW: Ошибка закрытия хранилища.", file=sys.stderr)
+                status = 1
+    return status
 
 
 if __name__ == "__main__":
