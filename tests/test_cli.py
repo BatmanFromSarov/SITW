@@ -1,9 +1,10 @@
 import io
+import json
 import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import app
 from sitw.core import Assistant as PublicAssistant
@@ -20,10 +21,10 @@ class CliIntegrationTests(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
 
-    def run_cli(self, inputs):
+    def run_cli(self, inputs, argv=None):
         out, err = io.StringIO(), io.StringIO()
         with patch("builtins.input", side_effect=inputs), patch("sys.stdout", out), patch("sys.stderr", err):
-            status = app.main()
+            status = app.main([] if argv is None else argv)
         return status, out.getvalue(), err.getvalue()
 
     def test_two_runs_keep_order_without_duplicates(self):
@@ -85,6 +86,122 @@ class CliIntegrationTests(unittest.TestCase):
 
     def test_imports_share_single_assistant(self):
         self.assertIs(PublicAssistant, Assistant)
+
+    def test_default_and_explicit_test_backend_never_create_ollama(self):
+        for argv in ([], ["--backend", "test"],
+                     ["--model", "other:7b", "--timeout", "2.5"]):
+            with self.subTest(argv=argv), patch("app.OllamaBackend") as factory:
+                status, out, err = self.run_cli(["hello", "exit"], argv)
+                self.assertEqual(status, 0)
+                self.assertEqual(err, "")
+                self.assertIn("SITW получил сообщение: hello", out)
+                factory.assert_not_called()
+
+    def test_ollama_selection_and_configuration(self):
+        for extra, model, timeout in (([], "qwen2.5:7b", 120.0),
+                                     (["--model", "other:7b", "--timeout", "2.5"], "other:7b", 2.5)):
+            with self.subTest(extra=extra), patch("app.OllamaBackend") as factory:
+                factory.return_value.generate.return_value = "answer"
+                status, out, err = self.run_cli(["hello", "exit"], ["--backend", "ollama"] + extra)
+                self.assertEqual(status, 0)
+                self.assertEqual(err, "")
+                self.assertIn("SITW: answer", out)
+                factory.assert_called_once_with(model=model, timeout=timeout)
+                factory.return_value.generate.assert_called_once_with("hello")
+                factory.return_value.close.assert_called_once_with()
+
+    def test_invalid_arguments_fail_before_opening_resources(self):
+        cases = [["--backend", "unknown"], ["--model", ""], ["--model", "   "],
+                 ["--unknown"], ["--model"], ["--timeout"], ["--backend"]]
+        cases.extend(["--timeout", value] for value in ("0", "-1", "nan", "inf", "-inf", "abc"))
+        for argv in cases:
+            with self.subTest(argv=argv), patch("app.Storage") as storage, patch("app.OllamaBackend") as backend:
+                with patch("sys.stderr", io.StringIO()), self.assertRaises(SystemExit) as caught:
+                    app.main(argv)
+                self.assertEqual(caught.exception.code, 2)
+                storage.assert_not_called()
+                backend.assert_not_called()
+
+    def test_help_exits_without_opening_resources(self):
+        with patch("app.Storage") as storage, patch("app.OllamaBackend") as backend:
+            with patch("sys.stdout", io.StringIO()) as out, self.assertRaises(SystemExit) as caught:
+                app.main(["--help"])
+            self.assertEqual(caught.exception.code, 0)
+            for flag in ("--backend", "--model", "--timeout"):
+                self.assertIn(flag, out.getvalue())
+            storage.assert_not_called()
+            backend.assert_not_called()
+
+    def test_ollama_http_success_persistence_order_and_restart(self):
+        with patch("sitw.core.ollama_backend.HTTPConnection") as factory:
+            response = MagicMock()
+            response.__enter__.return_value = response
+            response.status = 200
+            response.read.return_value = b'{"response":"answer","done":true}'
+            factory.return_value.getresponse.return_value = response
+
+            def check_saved_user(*args, **kwargs):
+                store = Storage()
+                try:
+                    self.assertEqual([(m["role"], m["content"]) for m in store.get_history()],
+                                     [("user", "hello")])
+                finally:
+                    store.close()
+
+            factory.return_value.request.side_effect = check_saved_user
+            status, out, err = self.run_cli(["hello", "exit"], ["--backend", "ollama"])
+            self.assertEqual((status, err), (0, ""))
+            self.assertIn("SITW: answer", out)
+            payload = json.loads(factory.return_value.request.call_args.kwargs["body"])
+            self.assertEqual(payload, {"model": "qwen2.5:7b", "prompt": "hello", "stream": False})
+            factory.return_value.close.assert_called_once_with()
+            response.__exit__.assert_called_once()
+        store = Storage()
+        try:
+            self.assertEqual([(m["role"], m["content"]) for m in store.get_history()],
+                             [("user", "hello"), ("assistant", "answer")])
+        finally:
+            store.close()
+        status, out, err = self.run_cli(["exit"], ["--backend", "ollama"])
+        self.assertEqual((status, err), (0, ""))
+        self.assertIn("Восстановлена история (2 сообщений)", out)
+
+    def test_ollama_http_failures_keep_user_and_close_resources(self):
+        cases = [(ConnectionRefusedError("private detail"), 200, b""),
+                 (TimeoutError("private detail"), 200, b""),
+                 (None, 500, b"private detail"),
+                 (None, 200, b"private detail"),
+                 (None, 200, b'{"error":"private detail"}'),
+                 (None, 200, b'{"response":" ","done":true}')]
+        for failure, status_code, body in cases:
+            with self.subTest(failure=failure, status=status_code, body=body), patch(
+                "sitw.core.ollama_backend.HTTPConnection"
+            ) as factory:
+                response = MagicMock()
+                response.__enter__.return_value = response
+                response.status = status_code
+                response.read.return_value = body
+                factory.return_value.getresponse.return_value = response
+                factory.return_value.request.side_effect = failure
+                store = Storage()
+                with patch("app.Storage", return_value=store):
+                    status, out, err = self.run_cli(["failed message"], ["--backend", "ollama"])
+                self.assertEqual(status, 1)
+                self.assertIn("Ваше сообщение сохранено", err)
+                self.assertNotIn("private detail", out + err)
+                self.assertNotIn("Traceback", out + err)
+                factory.return_value.close.assert_called_once_with()
+                with self.assertRaises(sqlite3.ProgrammingError):
+                    store.get_history()
+        reopened = Storage()
+        try:
+            self.assertEqual([(m["role"], m["content"]) for m in reopened.get_history()],
+                             [("user", "failed message")] * len(cases))
+        finally:
+            reopened.close()
+        status, out, err = self.run_cli(["exit"])
+        self.assertEqual((status, err), (0, ""))
+        self.assertIn(f"Восстановлена история ({len(cases)} сообщений)", out)
 
     def test_backend_success_is_persisted_and_resources_closed(self):
         backend = Mock()
