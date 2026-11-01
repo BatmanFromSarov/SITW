@@ -1,12 +1,39 @@
+import argparse
+import math
 import sqlite3
 import sys
 
 from sitw.core.assistant import Assistant
 from sitw.core.backend import BackendCloseError, GenerationError, InvalidResponseError
+from sitw.core.ollama_backend import OllamaBackend
 from sitw.database.storage import Storage
 
 
-def main():
+def positive_timeout(value):
+    try:
+        timeout = float(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError("Тайм-аут должен быть положительным числом.") from None
+    if not math.isfinite(timeout) or timeout <= 0:
+        raise argparse.ArgumentTypeError("Тайм-аут должен быть положительным конечным числом.")
+    return timeout
+
+
+def model_name(value):
+    if not value.strip():
+        raise argparse.ArgumentTypeError("Название модели не должно быть пустым.")
+    return value
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description="SITW — консольный помощник")
+    parser.add_argument("--backend", choices=("test", "ollama"), default="test",
+                        help="Источник ответов (по умолчанию: test)")
+    parser.add_argument("--model", type=model_name, default="qwen2.5:7b",
+                        help="Модель Ollama (по умолчанию: qwen2.5:7b; только для ollama)")
+    parser.add_argument("--timeout", type=positive_timeout, default=120.0,
+                        help="Тайм-аут операции сокета в секундах (по умолчанию: 120; только для ollama)")
+    args = parser.parse_args(argv)
     try:
         storage = Storage()
     except (sqlite3.Error, OSError) as exc:
@@ -16,7 +43,11 @@ def main():
     assistant = None
     status = 0
     try:
-        assistant = Assistant()
+        assistant = (
+            Assistant(OllamaBackend(model=args.model, timeout=args.timeout))
+            if args.backend == "ollama"
+            else Assistant()
+        )
         history = storage.get_history()
         print("SITW — Something In The Way")
         print("Для выхода введи: exit")
