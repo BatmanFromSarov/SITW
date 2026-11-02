@@ -385,3 +385,32 @@ Ollama на целевой машине, включая контекст пос�
 
 Схема и пользовательская база, Конституция, философия, архитектура и `.bak`
 не изменялись. Зависимости не добавлялись; commit, push и merge не выполнялись.
+
+## Актуальная контрольная точка — 02.11.2026 (отказы Ollama)
+
+Рабочая ветка: `test/ollama-failure-recovery`. Добавлены три наследника
+`GenerationError`: `ServerUnavailableError`, `ModelUnavailableError`,
+`ResponseInterruptedError`. CLI сообщает соответственно о невозможности
+подключения к Ollama, недоступности запрошенной модели (HTTP 404) и прерывании
+получения ответа (ConnectionError, кроме отказа подключения, и IncompleteRead).
+Сообщения фиксированы и не раскрывают исключения, адреса, пути или HTTP-тело.
+Остальные ошибки, включая тайм-аут, сохраняют прежнюю диагностику.
+
+Пользователь сохраняется до генерации; при отказе assistant не записывается,
+CLI возвращает 1. API `/api/chat`, успешные ответы, TextBackend/TestBackend,
+архитектура, схема и пользовательские данные не изменены.
+
+Изменены: `app.py`, `sitw/core/backend.py`, `sitw/core/ollama_backend.py`,
+`tests/test_cli.py`, `tests/test_ollama_backend.py`, `SITW_HANDOFF.md`,
+`SITW_ROADMAP.md`. Добавлены три тестовых метода: причины отказов CLI с временной
+SQLite и восстановлением истории, типы транспортных ошибок и закрытие response,
+отдельный HTTP 404. Дополнены проверки закрытия response при HTTP/API ошибках.
+Проверяются также ConnectionResetError, RemoteDisconnected, IncompleteRead,
+закрытие backend и SQLite и отсутствие фиктивного assistant.
+
+Проверка: `python -B -m unittest discover -s tests -v` — 49/49 успешно вне
+песочницы с разрешением; внутри песочницы python.exe недоступен.
+`git diff --check` — без ошибок. HTTP замокан, SQLite временная; реальный Ollama
+не проверен, mock-тесты не подтверждают его работу. Local AI не объявлен готовым.
+Конституция, философия и `.bak` не изменялись; зависимостей нет;
+commit/push/merge не выполнялись. Следующий шаг — проверка владельцем проекта.

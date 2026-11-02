@@ -2,9 +2,12 @@
 
 import json
 import math
-from http.client import HTTPConnection, HTTPException
+from http.client import HTTPConnection, HTTPException, IncompleteRead
 
-from .backend import GenerationError, InvalidResponseError
+from .backend import (
+    GenerationError, InvalidResponseError, ModelUnavailableError,
+    ResponseInterruptedError, ServerUnavailableError,
+)
 
 
 class OllamaBackend:
@@ -55,9 +58,15 @@ class OllamaBackend:
                 headers={"Content-Type": "application/json", "Accept": "application/json"},
             )
             with connection.getresponse() as response:
+                if response.status == 404:
+                    raise ModelUnavailableError("Запрошенная модель недоступна.")
                 if response.status != 200:
                     raise GenerationError("Локальная модель не смогла сформировать ответ.")
                 raw = response.read()
+        except ConnectionRefusedError:
+            raise ServerUnavailableError("Не удалось подключиться к Ollama.") from None
+        except (ConnectionError, IncompleteRead):
+            raise ResponseInterruptedError("Получение ответа прервано.") from None
         except (OSError, HTTPException):
             raise GenerationError("Не удалось получить ответ от локальной модели.") from None
         finally:

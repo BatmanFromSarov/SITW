@@ -1,10 +1,11 @@
 import json
 import unittest
-from http.client import HTTPException, IncompleteRead
+from http.client import HTTPException, IncompleteRead, RemoteDisconnected
 from unittest.mock import MagicMock, patch
 
 from sitw.core.assistant import Assistant
 from sitw.core.backend import GenerationError, InvalidResponseError, TextBackend
+from sitw.core.backend import ModelUnavailableError, ResponseInterruptedError, ServerUnavailableError
 from sitw.core.ollama_backend import OllamaBackend
 
 
@@ -63,6 +64,40 @@ class OllamaBackendTests(unittest.TestCase):
                 self.assertNotIn(str(status), str(caught.exception))
                 self.response.read.assert_not_called()
         self.assertEqual(self.connection.close.call_count, 5)
+        self.assertEqual(self.response.__exit__.call_count, 5)
+
+    def test_failure_types_and_response_cleanup(self):
+        cases = [
+            (self.connection.request, ConnectionRefusedError("private detail"), ServerUnavailableError, False),
+            (self.connection.request, BrokenPipeError("private detail"), ResponseInterruptedError, False),
+            (self.connection.getresponse, RemoteDisconnected("private detail"), ResponseInterruptedError, False),
+            (self.response.read, IncompleteRead(b"private detail"), ResponseInterruptedError, True),
+            (self.response.read, ConnectionResetError("private detail"), ResponseInterruptedError, True),
+            (self.response.read, TimeoutError("private detail"), GenerationError, True),
+        ]
+        for stage, failure, expected, entered in cases:
+            with self.subTest(failure=type(failure).__name__, stage=stage):
+                self.connection.close.reset_mock()
+                self.response.__exit__.reset_mock()
+                stage.side_effect = failure
+                try:
+                    with self.assertRaises(expected) as caught:
+                        self.backend.generate("hello")
+                    self.assertIs(type(caught.exception), expected)
+                    self.assertNotIn("private detail", str(caught.exception))
+                    self.assertTrue(caught.exception.__suppress_context__)
+                    self.connection.close.assert_called_once_with()
+                    self.assertEqual(self.response.__exit__.call_count, int(entered))
+                finally:
+                    stage.side_effect = None
+
+    def test_missing_model_has_distinct_error_and_closes_response(self):
+        self.response.status = 404
+        with self.assertRaises(ModelUnavailableError):
+            self.backend.generate("hello")
+        self.response.read.assert_not_called()
+        self.response.__exit__.assert_called_once()
+        self.connection.close.assert_called_once_with()
 
     def test_transport_failures_are_safe_and_connections_close(self):
         for stage in (self.connection.request, self.connection.getresponse, self.response.read):
@@ -114,6 +149,7 @@ class OllamaBackendTests(unittest.TestCase):
             self.backend.generate("hello")
         self.assertNotIn("private model path", str(caught.exception))
         self.connection.close.assert_called_once_with()
+        self.response.__exit__.assert_called_once()
 
     def test_each_call_sends_only_current_message(self):
         self.backend.generate("first")

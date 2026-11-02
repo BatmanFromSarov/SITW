@@ -3,12 +3,14 @@ import json
 import sqlite3
 import tempfile
 import unittest
+from http.client import IncompleteRead, RemoteDisconnected
 from pathlib import Path
 from unittest.mock import MagicMock, Mock, patch
 
 import app
 from sitw.core import Assistant as PublicAssistant
 from sitw.core.assistant import Assistant
+from sitw.core.backend import GenerationError
 from sitw.core.ollama_backend import OllamaBackend
 from sitw.database.storage import Storage
 
@@ -212,6 +214,67 @@ class CliIntegrationTests(unittest.TestCase):
         status, out, err = self.run_cli(["exit"])
         self.assertEqual((status, err), (0, ""))
         self.assertIn(f"Восстановлена история ({len(cases)} сообщений)", out)
+
+    def test_ollama_failure_reasons_persist_user_and_restore_history(self):
+        cases = [
+            ("request", ConnectionRefusedError("private detail"), 200,
+             "не удалось подключиться к Ollama"),
+            (None, None, 404, "запрошенная модель недоступна"),
+            ("getresponse", RemoteDisconnected("private detail"), 200,
+             "получение ответа прервано"),
+            ("read", IncompleteRead(b"private detail"), 200,
+             "получение ответа прервано"),
+            ("read", ConnectionResetError("private detail"), 200,
+             "получение ответа прервано"),
+            (None, None, 200, "сбой backend"),
+        ]
+        for index, (stage, failure, code, reason) in enumerate(cases, 1):
+            with self.subTest(stage=stage, code=code, failure=type(failure).__name__), patch(
+                "sitw.core.ollama_backend.HTTPConnection"
+            ) as factory:
+                connection = factory.return_value
+                response = MagicMock()
+                response.__enter__.return_value = response
+                response.status = code
+                response.read.return_value = b'{"error":"private detail"}'
+                connection.getresponse.return_value = response
+                if stage is not None:
+                    target = response if stage == "read" else connection
+                    getattr(target, stage).side_effect = failure
+                store = Storage()
+                backend = OllamaBackend()
+                with patch("app.Storage", return_value=store), patch(
+                    "app.OllamaBackend", return_value=backend
+                ):
+                    status, out, err = self.run_cli(["failed message"], ["--backend", "ollama"])
+                self.assertEqual(status, 1)
+                self.assertEqual(err, f"SITW: Не удалось сформировать ответ: {reason}. "
+                                 "Ваше сообщение сохранено. Работа остановлена.\n")
+                self.assertNotIn("SITW: answer", out)
+                self.assertNotIn("private detail", out + err)
+                connection.close.assert_called_once_with()
+                if stage in (None, "read"):
+                    response.__exit__.assert_called_once()
+                else:
+                    response.__exit__.assert_not_called()
+                if code == 404:
+                    response.read.assert_not_called()
+                with self.assertRaises(sqlite3.ProgrammingError):
+                    store.get_history()
+                with self.assertRaises(GenerationError):
+                    backend.generate("closed")
+                factory.assert_called_once()
+            reopened = Storage()
+            try:
+                self.assertEqual([(m["role"], m["content"]) for m in reopened.get_history()],
+                                 [("user", "failed message")] * index)
+            finally:
+                reopened.close()
+            with patch("sitw.core.ollama_backend.HTTPConnection") as unused:
+                status, out, err = self.run_cli(["exit"], ["--backend", "ollama"])
+                self.assertEqual((status, err), (0, ""))
+                self.assertIn(f"Восстановлена история ({index} сообщений)", out)
+                unused.assert_not_called()
 
     def test_chat_restart_limit_pending_users_and_no_duplicate_current(self):
         with patch("sitw.core.ollama_backend.HTTPConnection") as factory:

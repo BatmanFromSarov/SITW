@@ -11,6 +11,18 @@ class InvalidResponseError(GenerationError):
     """Generation returned something other than nonblank text."""
 
 
+class ServerUnavailableError(GenerationError):
+    """The local generation server refused the connection."""
+
+
+class ModelUnavailableError(GenerationError):
+    """The requested local model is unavailable."""
+
+
+class ResponseInterruptedError(GenerationError):
+    """The transport interrupted receipt of the response."""
+
+
 class BackendCloseError(Exception):
     """The backend could not release its resources."""
 
