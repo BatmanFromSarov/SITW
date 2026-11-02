@@ -31,10 +31,19 @@ class Storage:
                 "INSERT INTO messages (role, content) VALUES (?, ?)", (role, content)
             )
 
-    def get_history(self) -> list[dict]:
-        rows = self._connection.execute(
-            "SELECT id, role, content, created_at FROM messages ORDER BY id ASC"
-        ).fetchall()
+    def get_history(self, limit: int | None = None) -> list[dict]:
+        """Return the newest limit records chronologically, without modifying them."""
+        if limit is not None and (isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0):
+            raise ValueError("History limit must be a positive integer")
+        if limit is None:
+            rows = self._connection.execute(
+                "SELECT id, role, content, created_at FROM messages ORDER BY id ASC"
+            ).fetchall()
+        else:
+            rows = self._connection.execute(
+                "SELECT id, role, content, created_at FROM messages ORDER BY id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()[::-1]
         return [
             {"id": row[0], "role": row[1], "content": row[2], "created_at": row[3]}
             for row in rows

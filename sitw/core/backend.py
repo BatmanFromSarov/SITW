@@ -1,6 +1,6 @@
 """Text generation boundary; no model or inference dependencies."""
 
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 
 class GenerationError(Exception):
@@ -26,6 +26,13 @@ class TextBackend(Protocol):
     def generate(self, message: str) -> str: ...
 
     def close(self) -> None: ...
+
+
+@runtime_checkable
+class ChatBackend(TextBackend, Protocol):
+    """Optional dialogue support; messages include the current user entry."""
+
+    def generate_chat(self, messages: list[dict[str, str]]) -> str: ...
 
 
 class TestBackend:

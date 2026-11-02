@@ -1,5 +1,6 @@
 from .backend import (
     BackendCloseError,
+    ChatBackend,
     GenerationError,
     InvalidResponseError,
     TestBackend,
@@ -12,11 +13,21 @@ class Assistant:
         self._backend = backend if backend is not None else TestBackend()
         self._closed = False
 
-    def respond(self, message: str) -> str:
+    def respond(self, message: str, history: list[dict] | None = None) -> str:
+        """history, when supplied, already includes the saved current message."""
         if self._closed:
             raise GenerationError("Assistant is closed")
         try:
-            response = self._backend.generate(message)
+            if history is not None and isinstance(self._backend, ChatBackend):
+                messages = [{"role": item["role"], "content": item["content"]}
+                            for item in history]
+                # A bounded window may begin with replies to an omitted user.
+                start = 0
+                while start < len(messages) and messages[start]["role"] == "assistant":
+                    start += 1
+                response = self._backend.generate_chat(messages[start:])
+            else:
+                response = self._backend.generate(message)
         except GenerationError:
             raise
         except Exception as exc:

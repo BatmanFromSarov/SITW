@@ -19,6 +19,16 @@ def positive_timeout(value):
     return timeout
 
 
+def positive_context_messages(value):
+    try:
+        limit = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError("Лимит контекста должен быть положительным целым числом.") from None
+    if limit <= 0:
+        raise argparse.ArgumentTypeError("Лимит контекста должен быть положительным целым числом.")
+    return limit
+
+
 def model_name(value):
     if not value.strip():
         raise argparse.ArgumentTypeError("Название модели не должно быть пустым.")
@@ -33,6 +43,8 @@ def main(argv=None):
                         help="Модель Ollama (по умолчанию: qwen2.5:7b; только для ollama)")
     parser.add_argument("--timeout", type=positive_timeout, default=120.0,
                         help="Тайм-аут операции сокета в секундах (по умолчанию: 120; только для ollama)")
+    parser.add_argument("--context-messages", type=positive_context_messages, default=40,
+                        help="Максимум сообщений контекста, включая текущее (по умолчанию: 40; только для ollama)")
     args = parser.parse_args(argv)
     try:
         storage = Storage()
@@ -69,7 +81,12 @@ def main(argv=None):
 
             storage.save_message("user", message)
             try:
-                response = assistant.respond(message)
+                if args.backend == "ollama":
+                    response = assistant.respond(
+                        message, history=storage.get_history(limit=args.context_messages)
+                    )
+                else:
+                    response = assistant.respond(message)
             except GenerationError as exc:
                 reason = (
                     "получен пустой или некорректный ответ"

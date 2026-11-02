@@ -18,7 +18,7 @@ class OllamaBackendTests(unittest.TestCase):
         self.response.__enter__.return_value = self.response
         self.connection.getresponse.return_value = self.response
         self.response.status = 200
-        self.set_response({"response": " Ответ\n", "done": True})
+        self.set_response({"message": {"role": "assistant", "content": " Ответ\n"}, "done": True})
         self.backend: TextBackend = OllamaBackend()
         self.addCleanup(self.backend.close)
 
@@ -29,9 +29,9 @@ class OllamaBackendTests(unittest.TestCase):
         self.assertEqual(self.backend.generate("Привет"), " Ответ\n")
         self.connection_type.assert_called_once_with("127.0.0.1", 11434, timeout=120.0)
         args, kwargs = self.connection.request.call_args
-        self.assertEqual(args, ("POST", "/api/generate"))
+        self.assertEqual(args, ("POST", "/api/chat"))
         self.assertEqual(json.loads(kwargs["body"].decode("utf-8")), {
-            "model": "qwen2.5:7b", "prompt": "Привет", "stream": False,
+            "model": "qwen2.5:7b", "messages": [{"role": "user", "content": "Привет"}], "stream": False,
         })
         self.assertEqual(kwargs["headers"]["Content-Type"], "application/json")
         self.response.__exit__.assert_called_once()
@@ -93,6 +93,14 @@ class OllamaBackendTests(unittest.TestCase):
                   {"response": "answer", "done": False}, {"response": "answer", "done": 1}]
         values.extend({"response": text, "done": True}
                       for text in ("", " \t\n", None, 123, False, [], {}))
+        values.extend({"message": message, "done": True} for message in (
+            None, [], "answer", {}, {"role": "user", "content": "answer"},
+            {"role": "assistant"},
+        ))
+        values.extend({"message": {"role": "assistant", "content": text}, "done": True}
+                      for text in ("", " \t\n", None, 123, False, [], {}))
+        values.extend({"message": {"role": "assistant", "content": "answer"}, "done": done}
+                      for done in (False, None, 1))
         for value in values:
             with self.subTest(value=value):
                 self.set_response(value)
@@ -112,11 +120,35 @@ class OllamaBackendTests(unittest.TestCase):
         self.backend.generate("second")
         payloads = [json.loads(call.kwargs["body"]) for call in self.connection.request.call_args_list]
         self.assertEqual(payloads, [
-            {"model": "qwen2.5:7b", "prompt": message, "stream": False}
+            {"model": "qwen2.5:7b", "messages": [{"role": "user", "content": message}], "stream": False}
             for message in ("first", "second")
         ])
         self.assertEqual(self.connection_type.call_count, 2)
         self.assertEqual(self.connection.close.call_count, 2)
+
+    def test_explicit_chat_preserves_roles_order_and_strips_metadata(self):
+        self.backend.generate_chat([
+            {"role": "user", "content": "first", "id": 1},
+            {"role": "assistant", "content": "reply"},
+            {"role": "user", "content": "pending"},
+            {"role": "user", "content": "first"},
+        ])
+        self.assertEqual(json.loads(self.connection.request.call_args.kwargs["body"]), {
+            "model": "qwen2.5:7b", "stream": False, "messages": [
+                {"role": "user", "content": "first"},
+                {"role": "assistant", "content": "reply"},
+                {"role": "user", "content": "pending"},
+                {"role": "user", "content": "first"},
+            ],
+        })
+
+    def test_invalid_chat_fails_before_http(self):
+        for messages in ([], [None], [{"role": "system", "content": "text"}],
+                         [{"role": "user", "content": " "}],
+                         [{"role": "assistant", "content": "reply"}]):
+            with self.subTest(messages=messages), self.assertRaises(GenerationError):
+                self.backend.generate_chat(messages)
+        self.connection_type.assert_not_called()
 
     def test_close_is_idempotent_and_prevents_http(self):
         self.backend.close()
