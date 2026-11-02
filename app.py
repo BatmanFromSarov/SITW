@@ -4,7 +4,10 @@ import sqlite3
 import sys
 
 from sitw.core.assistant import Assistant
-from sitw.core.backend import BackendCloseError, GenerationError, InvalidResponseError
+from sitw.core.backend import (
+    BackendCloseError, GenerationError, InvalidResponseError,
+    ModelUnavailableError, ResponseInterruptedError, ServerUnavailableError,
+)
 from sitw.core.ollama_backend import OllamaBackend
 from sitw.database.storage import Storage
 
@@ -93,6 +96,14 @@ def main(argv=None):
                     if isinstance(exc, InvalidResponseError)
                     else "сбой backend"
                 )
+                for error_type, safe_reason in (
+                    (ServerUnavailableError, "не удалось подключиться к Ollama"),
+                    (ModelUnavailableError, "запрошенная модель недоступна"),
+                    (ResponseInterruptedError, "получение ответа прервано"),
+                ):
+                    if isinstance(exc, error_type):
+                        reason = safe_reason
+                        break
                 print(
                     f"SITW: Не удалось сформировать ответ: {reason}. "
                     "Ваше сообщение сохранено. Работа остановлена.",
