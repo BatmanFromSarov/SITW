@@ -6,6 +6,52 @@ from sitw.core.backend import BackendCloseError, GenerationError, InvalidRespons
 
 
 class AssistantTests(unittest.TestCase):
+    def test_chat_trims_only_leading_assistants_and_keeps_pending_users(self):
+        class Chat:
+            def generate(self, message):
+                raise AssertionError("Expected chat")
+
+            def generate_chat(self, messages):
+                self.messages = messages
+                return "answer"
+
+            def close(self):
+                pass
+
+        backend = Chat()
+        assistant = Assistant(backend)
+        self.addCleanup(assistant.close)
+        history = [
+            {"role": "assistant", "content": "old reply"},
+            {"role": "assistant", "content": "another reply"},
+            {"role": "user", "content": "pending", "id": 3},
+            {"role": "user", "content": "current", "id": 4},
+        ]
+        self.assertEqual(assistant.respond("current", history=history), "answer")
+        self.assertEqual(backend.messages, [
+            {"role": "user", "content": "pending"},
+            {"role": "user", "content": "current"},
+        ])
+        self.assertEqual(len(history), 4)
+
+    def test_history_preserves_legacy_backend_contract(self):
+        class Legacy:
+            def generate(self, message):
+                return "legacy: " + message
+
+            def close(self):
+                pass
+
+        for backend, expected in ((Legacy(), "legacy: hello"),
+                                  (None, "SITW получил сообщение: hello")):
+            assistant = Assistant(backend)
+            try:
+                self.assertEqual(assistant.respond("hello", history=[
+                    {"role": "user", "content": "hello"}
+                ]), expected)
+            finally:
+                assistant.close()
+
     def test_default_response_is_compatible(self):
         assistant = Assistant()
         self.addCleanup(assistant.close)

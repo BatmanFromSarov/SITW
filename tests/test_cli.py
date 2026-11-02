@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, Mock, patch
 import app
 from sitw.core import Assistant as PublicAssistant
 from sitw.core.assistant import Assistant
+from sitw.core.ollama_backend import OllamaBackend
 from sitw.database.storage import Storage
 
 
@@ -101,19 +102,27 @@ class CliIntegrationTests(unittest.TestCase):
         for extra, model, timeout in (([], "qwen2.5:7b", 120.0),
                                      (["--model", "other:7b", "--timeout", "2.5"], "other:7b", 2.5)):
             with self.subTest(extra=extra), patch("app.OllamaBackend") as factory:
-                factory.return_value.generate.return_value = "answer"
+                factory.return_value = Mock(spec=OllamaBackend)
+                factory.return_value.generate_chat.return_value = "answer"
                 status, out, err = self.run_cli(["hello", "exit"], ["--backend", "ollama"] + extra)
                 self.assertEqual(status, 0)
                 self.assertEqual(err, "")
                 self.assertIn("SITW: answer", out)
                 factory.assert_called_once_with(model=model, timeout=timeout)
-                factory.return_value.generate.assert_called_once_with("hello")
+                factory.return_value.generate_chat.assert_called_once_with([
+                    {"role": "user", "content": "hello"}
+                ] if not extra else [
+                    {"role": "user", "content": "hello"},
+                    {"role": "assistant", "content": "answer"},
+                    {"role": "user", "content": "hello"},
+                ])
                 factory.return_value.close.assert_called_once_with()
 
     def test_invalid_arguments_fail_before_opening_resources(self):
         cases = [["--backend", "unknown"], ["--model", ""], ["--model", "   "],
                  ["--unknown"], ["--model"], ["--timeout"], ["--backend"]]
         cases.extend(["--timeout", value] for value in ("0", "-1", "nan", "inf", "-inf", "abc"))
+        cases.extend(["--context-messages", value] for value in ("0", "-1", "1.5", "abc"))
         for argv in cases:
             with self.subTest(argv=argv), patch("app.Storage") as storage, patch("app.OllamaBackend") as backend:
                 with patch("sys.stderr", io.StringIO()), self.assertRaises(SystemExit) as caught:
@@ -127,7 +136,7 @@ class CliIntegrationTests(unittest.TestCase):
             with patch("sys.stdout", io.StringIO()) as out, self.assertRaises(SystemExit) as caught:
                 app.main(["--help"])
             self.assertEqual(caught.exception.code, 0)
-            for flag in ("--backend", "--model", "--timeout"):
+            for flag in ("--backend", "--model", "--timeout", "--context-messages"):
                 self.assertIn(flag, out.getvalue())
             storage.assert_not_called()
             backend.assert_not_called()
@@ -137,7 +146,7 @@ class CliIntegrationTests(unittest.TestCase):
             response = MagicMock()
             response.__enter__.return_value = response
             response.status = 200
-            response.read.return_value = b'{"response":"answer","done":true}'
+            response.read.return_value = b'{"message":{"role":"assistant","content":"answer"},"done":true}'
             factory.return_value.getresponse.return_value = response
 
             def check_saved_user(*args, **kwargs):
@@ -153,7 +162,7 @@ class CliIntegrationTests(unittest.TestCase):
             self.assertEqual((status, err), (0, ""))
             self.assertIn("SITW: answer", out)
             payload = json.loads(factory.return_value.request.call_args.kwargs["body"])
-            self.assertEqual(payload, {"model": "qwen2.5:7b", "prompt": "hello", "stream": False})
+            self.assertEqual(payload, {"model": "qwen2.5:7b", "messages": [{"role": "user", "content": "hello"}], "stream": False})
             factory.return_value.close.assert_called_once_with()
             response.__exit__.assert_called_once()
         store = Storage()
@@ -191,6 +200,7 @@ class CliIntegrationTests(unittest.TestCase):
                 self.assertNotIn("private detail", out + err)
                 self.assertNotIn("Traceback", out + err)
                 factory.return_value.close.assert_called_once_with()
+                factory.return_value.request.assert_called_once()
                 with self.assertRaises(sqlite3.ProgrammingError):
                     store.get_history()
         reopened = Storage()
@@ -202,6 +212,59 @@ class CliIntegrationTests(unittest.TestCase):
         status, out, err = self.run_cli(["exit"])
         self.assertEqual((status, err), (0, ""))
         self.assertIn(f"Восстановлена история ({len(cases)} сообщений)", out)
+
+    def test_chat_restart_limit_pending_users_and_no_duplicate_current(self):
+        with patch("sitw.core.ollama_backend.HTTPConnection") as factory:
+            response = MagicMock()
+            response.__enter__.return_value = response
+            response.status = 200
+            response.read.return_value = (
+                b'{"message":{"role":"assistant","content":"reply"},"done":true}'
+            )
+            factory.return_value.getresponse.return_value = response
+            argv = ["--backend", "ollama"]
+            self.assertEqual(self.run_cli(["same", "exit"], argv)[0], 0)
+            # A new main invocation creates a new Storage, Assistant and backend.
+            self.assertEqual(self.run_cli(["same", "exit"], argv)[0], 0)
+            payload = json.loads(factory.return_value.request.call_args.kwargs["body"])
+            self.assertEqual(factory.return_value.request.call_args.args, ("POST", "/api/chat"))
+            self.assertEqual(payload, {"model": "qwen2.5:7b", "stream": False,
+                "messages": [
+                    {"role": "user", "content": "same"},
+                    {"role": "assistant", "content": "reply"},
+                    {"role": "user", "content": "same"},
+                ]})
+            factory.return_value.request.side_effect = ConnectionRefusedError("private")
+            calls_before = factory.return_value.request.call_count
+            self.assertEqual(self.run_cli(["pending"], argv)[0], 1)
+            self.assertEqual(factory.return_value.request.call_count, calls_before + 1)
+            store = Storage()
+            try:
+                before = store.get_history()
+                self.assertEqual(before[-1]["role"], "user")
+                self.assertEqual(len(before), 5)
+            finally:
+                store.close()
+            factory.return_value.request.side_effect = None
+            # Last three records: orphan assistant, pending user, current user.
+            self.assertEqual(self.run_cli(["current", "exit"],
+                                         argv + ["--context-messages", "3"])[0], 0)
+            self.assertEqual(json.loads(factory.return_value.request.call_args.kwargs["body"])["messages"], [
+                {"role": "user", "content": "pending"},
+                {"role": "user", "content": "current"},
+            ])
+            store = Storage()
+            try:
+                after = store.get_history()
+                self.assertEqual(after[:5], before)
+                self.assertEqual(len(after), 7)
+            finally:
+                store.close()
+            self.assertEqual(self.run_cli(["only", "exit"],
+                                         argv + ["--context-messages", "1"])[0], 0)
+            self.assertEqual(json.loads(factory.return_value.request.call_args.kwargs["body"])["messages"], [
+                {"role": "user", "content": "only"},
+            ])
 
     def test_backend_success_is_persisted_and_resources_closed(self):
         backend = Mock()

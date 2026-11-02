@@ -8,6 +8,30 @@ from sitw.database.storage import Storage
 
 
 class StorageTests(unittest.TestCase):
+    def test_limited_history_is_ordered_read_only_and_validated(self):
+        store = Storage()
+        self.addCleanup(store.close)
+        for role, text in (("user", "first"), ("assistant", "reply"),
+                           ("user", "pending"), ("user", "current")):
+            store.save_message(role, text)
+        before = store.get_history()
+        db_before = self.db_path.read_bytes()
+        schema_before = store._connection.execute(
+            "SELECT sql FROM sqlite_master ORDER BY name"
+        ).fetchall()
+        self.assertEqual(store.get_history(limit=3), before[-3:])
+        self.assertEqual(store.get_history(limit=1), before[-1:])
+        self.assertEqual(store.get_history(limit=100), before)
+        for limit in (0, -1, True, 1.5, "2"):
+            with self.subTest(limit=limit), self.assertRaises(ValueError):
+                store.get_history(limit=limit)
+        self.assertEqual(store.get_history(), before)
+        self.assertEqual(self.db_path.read_bytes(), db_before)
+        self.assertEqual(store._connection.execute(
+            "SELECT sql FROM sqlite_master ORDER BY name"
+        ).fetchall(), schema_before)
+        self.assertEqual(store._connection.execute("PRAGMA integrity_check").fetchone(), ("ok",))
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
